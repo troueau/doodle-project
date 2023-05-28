@@ -1,0 +1,94 @@
+version: "3.8"
+services:
+  db:
+    image: mysql
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=tlc
+      - MYSQL_USER=tlc
+      - MYSQL_PASSWORD=tlc
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+  etherpad:
+    image: etherpad/etherpad:latest
+    hostname: etherpad
+    ports:
+      - "9001:9001"
+    volumes:
+      - ./APIKEY.txt:/opt/etherpad-lite/APIKEY.txt
+  mail:
+    image: bytemark/smtp
+    restart: always
+    ports:
+      - "2525:25"
+  api:
+    image: testback
+    environment: 
+      - quarkus.datasource.jdbc.url=jdbc:mysql://db:3306/tlc?useUnicode=true&serverTimezone=Europe/Paris
+      - doodle.internalPadUrl=http://etherpad:9001/ 
+      - doodle.externalPadUrl=http://etherpad:9001/
+    restart: always
+    hostname: api
+
+    # networks:
+    #   services-net:
+    #     aliases:
+    #       - api
+    build:
+      context: api
+      dockerfile: ./Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      mail: 
+        condition : service_started
+      etherpad:
+        condition : service_started
+    ports:
+      - "8080:8080"
+  front:
+    image: testfront
+    hostname: front
+    restart: always
+    # networks:
+    #   services-net:
+    #     aliases:
+    #       - front
+    build:
+      context: front
+      dockerfile: ./Dockerfile
+    ports:
+      - "8081:80"
+  nginx:
+    image: bunkerity/bunkerweb
+    ports:
+      - 80:80
+    # networks:
+    #   - services-net
+    restart: always
+    environment:
+      - SERVER_NAME=demo.tlc.fr
+      - USE_REVERSE_PROXY=yes
+      - AUTO_LETS_ENCRYPT=no
+      - USE_MODSECURITY=no
+      - USE_GZIP=no
+      - USE_BROTLI=no
+      - REVERSE_PROXY_URL_1=/
+      - REVERSE_PROXY_URL_2=/api
+      - REVERSE_PROXY_HOST_1=http://front:8081
+      - REVERSE_PROXY_HOST_2=http://api:8080
+      - LISTEN_HTTP=yes
+    depends_on:
+      - front
+      - api
+    links:
+      - front
+      - api
+    
+# networks:
+#   services-net:
+#     name: services-net
